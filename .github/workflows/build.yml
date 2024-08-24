@@ -32,7 +32,7 @@ jobs:
         run: |
           forge fmt --check
         id: fmt
-        
+
       - name: Run Soldeer Install
         run: |
           forge soldeer install
@@ -40,7 +40,7 @@ jobs:
 
       - name: Run Forge build
         run: |
-          forge build --sizes
+          forge build
         id: build
 
       - name: Run Forge tests
