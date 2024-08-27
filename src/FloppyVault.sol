@@ -8,15 +8,34 @@ import { ERC20Upgradeable, IERC20 } from "@openzeppelin/contracts-upgradeable/to
 import { ContextUpgradeable } from "@openzeppelin/contracts-upgradeable/utils/ContextUpgradeable.sol";
 import { AccessControlEnumerable } from "@openzeppelin/contracts/access/extensions/AccessControlEnumerable.sol";
 import { SafeERC20 } from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
+import { ECDSA } from "@openzeppelin/contracts/utils/cryptography/ECDSA.sol";
+import { MessageHashUtils } from "@openzeppelin/contracts/utils/cryptography/MessageHashUtils.sol";
 
 contract FloppyVault is IFloppyVault, ERC20Upgradeable, Pausable, AccessControlEnumerable {
   uint256 public constant MAX_PERCENTAGE = 100_000;
+
+  /// @dev keccak256("EIP712Domain(string name,string version,uint256 chainId,address verifyingContract)")
+  bytes32 public constant DOMAIN_TYPEHASH = 0x8b73c3c69bb8fe3d512ecc4cf759cc79239f7b179b0ffacaa9a75d522b39400f;
+
+  /// @dev keccak256("Permit(address requester,address recipient,uint256 nonce,uint256 amount,uint256 deadline)");
+  bytes32 public constant PERMIT_TYPEHASH = 0xb365888e64ab7bc61fb16d9b1949494d2eb12e26fcdf26e14b500893673a5a59;
+
   /// @dev Gap for upgradability.
   uint256[50] private _____gap;
+
+  bytes32 public DOMAIN_SEPARATOR;
+
+  /// @dev mapping: user => nonce
+  mapping(address => uint256) internal _userNonceMap;
+
   /// @dev Address of the token asset.
   IERC20 internal _asset;
+
   /// @dev Tax percentage Vault would take per deposit or mint request. [0_000 -> 100_000] 0% -> 100%;
   uint256 internal _taxPercent;
+
+  /// @dev Signer address.
+  address _signer;
 
   modifier notZero(uint256 value) {
     if (value == 0) revert InvalidAmount();
@@ -31,8 +50,10 @@ contract FloppyVault is IFloppyVault, ERC20Upgradeable, Pausable, AccessControlE
     if (address(token) == address(0)) revert InvalidAssetAddress();
     __ERC20_init("Floppy Vault", "FVT");
     _grantRole(DEFAULT_ADMIN_ROLE, admin);
+    _updateDomainSeparator();
     _asset = token;
     _taxPercent = taxPercent;
+    _signer = admin;
   }
 
   /// @inheritdoc IFloppyVault
@@ -43,6 +64,18 @@ contract FloppyVault is IFloppyVault, ERC20Upgradeable, Pausable, AccessControlE
   /// @inheritdoc IFloppyVault
   function unpause() external onlyRole(DEFAULT_ADMIN_ROLE) {
     _unpause();
+  }
+
+  /// @inheritdoc IFloppyVault
+  function setAsset(IERC20 asset) external onlyRole(DEFAULT_ADMIN_ROLE) {
+    _asset = asset;
+    emit AssetUpdated(address(asset));
+  }
+
+  /// @inheritdoc IFloppyVault
+  function setSigner(address signer) external onlyRole(DEFAULT_ADMIN_ROLE) {
+    _signer = signer;
+    emit SignerUpdated(address(signer));
   }
 
   /// @inheritdoc IFloppyVault
@@ -67,6 +100,22 @@ contract FloppyVault is IFloppyVault, ERC20Upgradeable, Pausable, AccessControlE
     }
     shares = previewWithdraw(tokenAmount);
     _withdraw(_msgSender(), owner, receiver, tokenAmount, shares);
+  }
+
+  function permitWithdraw(
+    address recipient,
+    uint256 tokenAmount,
+    uint256 nonce,
+    uint256 deadline,
+    bytes memory signature
+  ) external whenNotPaused notZero(tokenAmount) {
+    if (deadline < block.timestamp) revert SignatureExprired();
+    if (nonce != _userNonceMap[_msgSender()]) revert ErrInvalidNonce();
+
+    _validateSignature(_msgSender(), recipient, nonce, tokenAmount, deadline, signature);
+    _increaseUserNonce(_msgSender());
+
+    SafeERC20.safeTransfer(_asset, recipient, tokenAmount);
   }
 
   /// @inheritdoc IFloppyVault
@@ -142,6 +191,11 @@ contract FloppyVault is IFloppyVault, ERC20Upgradeable, Pausable, AccessControlE
     tokenAmount = idealAmount - taxFee;
   }
 
+  /// @inheritdoc IFloppyVault
+  function getUserNonce(address user) external view returns (uint256) {
+    return _userNonceMap[user];
+  }
+
   function _convertToShares(uint256 tokenAmount) internal view returns (uint256 shares) {
     shares = (tokenAmount * (totalSupply() + 10 ** _virtualOffset())) / (totalAssets() + 1);
   }
@@ -187,8 +241,40 @@ contract FloppyVault is IFloppyVault, ERC20Upgradeable, Pausable, AccessControlE
     taxFee = (tokenAmount * _taxPercent) / MAX_PERCENTAGE;
   }
 
-  /// @dev This function is used for testing purposes, please delete before deploy to production.
-  function exposed_setToken(IERC20 newAsset) external {
-    _asset = newAsset;
+  /// @dev Updates domain separator.
+  function _updateDomainSeparator() internal {
+    bytes32 nameHash = keccak256(bytes("FloppyVault"));
+    bytes32 versionHash = keccak256(bytes("1"));
+    assembly ("memory-safe") {
+      let free_mem_ptr := mload(0x40) // Load the free memory pointer.
+      mstore(free_mem_ptr, DOMAIN_TYPEHASH)
+      mstore(add(free_mem_ptr, 0x20), nameHash)
+      mstore(add(free_mem_ptr, 0x40), versionHash)
+      mstore(add(free_mem_ptr, 0x60), chainid())
+      mstore(add(free_mem_ptr, 0x80), address())
+      sstore(DOMAIN_SEPARATOR.slot, keccak256(free_mem_ptr, 0xa0))
+    }
+  }
+
+  function _validateSignature(
+    address requester,
+    address recipient,
+    uint256 nonce,
+    uint256 tokenAmount,
+    uint256 deadline,
+    bytes memory signature
+  ) internal view {
+    address signer = ECDSA.recover(
+      MessageHashUtils.toTypedDataHash(
+        DOMAIN_SEPARATOR, keccak256(abi.encode(PERMIT_TYPEHASH, requester, recipient, nonce, tokenAmount, deadline))
+      ),
+      signature
+    );
+    if (signer != _signer) revert InvalidSignature();
+  }
+
+  function _increaseUserNonce(address user) internal returns (uint256 newNonce) {
+    newNonce = ++_userNonceMap[user];
+    emit UserNonceIncreased(user, newNonce);
   }
 }

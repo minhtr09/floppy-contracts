@@ -4,25 +4,52 @@ pragma solidity ^0.8.25;
 import { IERC20 } from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 
 interface IFloppyVault is IERC20 {
-  /// @dev emit when user deposit ERC20 token.
+  /// @dev Emit when the vault's asset is updated.
+  event AssetUpdated(address indexed asset);
+
+  // @dev Emit when the signer is updated.
+  event SignerUpdated(address indexed asset);
+
+  /// @dev Emit when user deposit ERC20 token.
   event Deposit(address indexed sender, address indexed owner, uint256 tokenAmount, uint256 shares);
 
-  /// @dev emit when user withdraw ERC20 token.
+  /// @dev Emit when user withdraw ERC20 token.
   event Withdraw(
     address indexed sender, address indexed owner, address indexed receiver, uint256 tokenAmount, uint256 shares
   );
 
+  /// @dev Emit when user's nonce is increased.
+  event UserNonceIncreased(address indexed user, uint256 newNonce);
+
   /// @dev Revert when asset is address(0);
   error InvalidAssetAddress();
 
+  /// @dev Revert when nonce is not increase by one.
+  error ErrInvalidNonce();
+
+  /// @dev Revert signature expired.
+  error SignatureExprired();
+
   /// @dev Revert when deposit or mint amount is 0;
   error InvalidAmount();
+
+  /// @dev Revert when signature is invalid.
+  error InvalidSignature();
 
   /// @dev Attempted to withdraw more assets than the max amount for `receiver`.
   error ExceededMaxWithdraw(address owner, uint256 assets, uint256 max);
 
   /// @dev Attempted to redeem more shares than the max amount for `receiver`.
   error ExceededMaxRedeem(address owner, uint256 shares, uint256 max);
+
+  /// @dev Return domain type hash.
+  function DOMAIN_TYPEHASH() external pure returns (bytes32);
+
+  /// @dev Return permit type hash.
+  function PERMIT_TYPEHASH() external pure returns (bytes32);
+
+  /// @dev Return domain seperator.
+  function DOMAIN_SEPARATOR() external view returns (bytes32);
 
   /// @dev Return token address managed by this vault.
   function asset() external view returns (address assetTokenAddress);
@@ -65,6 +92,26 @@ interface IFloppyVault is IERC20 {
    * NOTE: this function may not equal to convertToAssets because of tax, etc.
    */
   function previewRedeem(uint256 shares) external view returns (uint256 tokenAmount);
+
+  /**
+   * @dev Return user's nonce.
+   * Emit an {UserNonceIncreased} event.
+   */
+  function getUserNonce(address user) external view returns (uint256);
+
+  /**
+   * @dev Set Vault's asset.
+   * Just admin can call this function.
+   * Emit an {AssetUpdated} event.
+   */
+  function setAsset(IERC20 asset) external;
+
+  /**
+   * @dev Set Vault signer.
+   * Just admin can call this function.
+   * Emit an {SignerUpdated} event.
+   */
+  function setSigner(address signer) external;
 
   /**
    * @dev Mint shares to the receiver based on the amount of tokens deposited to this Vault.
