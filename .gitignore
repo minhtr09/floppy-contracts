@@ -2,7 +2,7 @@
 cache/
 out/
 artifacts/
-
+cache_foundry
 
 # Ignores development broadcast logs
 !/broadcast
