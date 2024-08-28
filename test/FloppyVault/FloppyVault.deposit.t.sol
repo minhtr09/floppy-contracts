@@ -8,7 +8,7 @@ import { IERC20Errors } from "@openzeppelin/contracts/interfaces/draft-IERC6093.
 contract FloppyVault_Deposit_Test is FloppyVaultTest {
   // Happy cases for deposit() function.
   function testConcrete_Deposit100FLP_GetRightAmountOfShares_And_EmitEvent() public callAs(testAdmin) {
-    uint256 sharesWillGet = _calShares(100 ether, false);
+    uint256 sharesWillGet = _calShares({ tokenAmount: 100 ether, withTax: false });
 
     _expectEmitDeposit(testAdmin, testAdmin, 100 ether, sharesWillGet, 1);
     uint256 actualSharesWillGet = _floppyVault.deposit(100 ether, testAdmin);
@@ -18,7 +18,7 @@ contract FloppyVault_Deposit_Test is FloppyVaultTest {
   }
 
   function testConcrete_Deposit100FLP_ForReceiver_GetRightAmountOfShares_And_EmitEvent() public callAs(testAdmin) {
-    uint256 sharesWillGet = _calShares(100 ether, false);
+    uint256 sharesWillGet = _calShares({ tokenAmount: 100 ether, withTax: false });
 
     _expectEmitDeposit(testAdmin, _user1, 100 ether, sharesWillGet, 1);
     uint256 actualSharesWillGet = _floppyVault.deposit(100 ether, _user1);
@@ -32,7 +32,7 @@ contract FloppyVault_Deposit_Test is FloppyVaultTest {
     callAs(testAdmin)
   {
     uint256 amount = 100 ether;
-    uint256 sharesWillGet = _calShares(amount, false);
+    uint256 sharesWillGet = _calShares({ tokenAmount: amount, withTax: false });
 
     _expectEmitDeposit(testAdmin, testAdmin, amount, sharesWillGet, 1);
     uint256 shares1 = _floppyVault.deposit(amount, testAdmin);
