@@ -11,8 +11,13 @@ interface ISharedArgument is IGeneralConfig {
     uint256 taxPercent;
   }
 
+  struct FLPParam {
+    address owner;
+  }
+
   struct SharedParameter {
     FloppyVaultParam floppyVault;
+    FLPParam flp;
   }
 
   function sharedArguments() external view returns (SharedParameter memory param);

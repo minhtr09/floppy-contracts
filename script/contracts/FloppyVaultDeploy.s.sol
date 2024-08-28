@@ -5,6 +5,7 @@ import { ISharedArgument, Migration } from "@script/Migration.s.sol";
 import { Contract } from "@script/utils/Contract.sol";
 import { FloppyVault } from "@contracts/FloppyVault.sol";
 import { IERC20 } from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
+import { BaseGeneralConfig } from "@fdk/BaseGeneralConfig.sol";
 
 contract FloppyVaultDeploy is Migration {
   function _defaultArguments() internal virtual override returns (bytes memory args) {
@@ -13,6 +14,8 @@ contract FloppyVaultDeploy is Migration {
   }
 
   function run() public virtual returns (FloppyVault) {
-    return FloppyVault(_deployProxy(Contract.FloppyVault.key()));
+    FloppyVault deployed = FloppyVault(_deployProxy(Contract.FloppyVault.key()));
+    _checkAdmin(address(deployed));
+    return deployed;
   }
 }
