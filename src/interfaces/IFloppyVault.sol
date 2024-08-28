@@ -18,6 +18,9 @@ interface IFloppyVault is IERC20 {
     address indexed sender, address indexed owner, address indexed receiver, uint256 tokenAmount, uint256 shares
   );
 
+  /// @dev Emit when user withdraw reward.
+  event WithdrawReward(address indexed sender, uint256 tokenAmount);
+
   /// @dev Emit when user's nonce is increased.
   event UserNonceIncreased(address indexed user, uint256 newNonce);
 
@@ -114,30 +117,88 @@ interface IFloppyVault is IERC20 {
   function setSigner(address signer) external;
 
   /**
-   * @dev Mint shares to the receiver based on the amount of tokens deposited to this Vault.
+   * @dev Deposits assets into the vault and mints shares to the receiver.
    *
-   * Emit an {Deposit} event.
+   * This function transfers assets from the caller to the vault and mints corresponding shares to the receiver.
+   *
+   * @param tokenAmount The amount of tokens to deposit.
+   * @param receiver The address receiving the minted shares.
+   * @return shares The number of shares minted to the receiver.
+   *
+   * @notice The actual number of shares minted may differ from the ideal conversion due to rounding or fees.
+   *
+   * Emits a {Deposit} event.
    */
   function deposit(uint256 tokenAmount, address receiver) external returns (uint256 shares);
 
   /**
-   * @dev Burns shares from owner and sends exactly assets of underlying tokens to receiver.
+   * @dev Withdraws assets from the vault by burning shares from the owner.
    *
-   * Emit an {Withdraw} event.
+   * This function burns shares from the owner and transfers the corresponding assets to the receiver.
+   *
+   * @param tokenAmount The amount of tokens to withdraw.
+   * @param receiver The address receiving the withdrawn assets.
+   * @param owner The address whose shares are being burned.
+   * @return shares The number of shares burned from the owner.
+   *
+   * @notice The caller must have approval to burn the owner's shares if not the owner.
+   *
+   * Emits a {Withdraw} event.
    */
   function withdraw(uint256 tokenAmount, address receiver, address owner) external returns (uint256 shares);
 
   /**
-   * @dev Mint exactly amount of shares to the receiver by deposited to this Vault.
+   * @dev Withdraws reward with signature of the authorized signer.
    *
-   * Emit an {Deposit} event.
+   * This function transfers assets directly to the recipient without burning shares.
+   * It requires a valid signature from the authorized signer.
+   *
+   * @param recipient The address receiving the reward.
+   * @param tokenAmount The amount of tokens to withdraw as a reward.
+   * @param nonce The current nonce of the recipient, used to prevent replay attacks.
+   * @param deadline The timestamp after which the signature is no longer valid.
+   * @param signature The cryptographic signature authorizing the withdrawal.
+   *
+   * @notice This operation does not affect the recipient's share balance.
+   *
+   * Emits a {WithdrawReward} event.
+   */
+  function permitRewardWithdraw(
+    address recipient,
+    uint256 tokenAmount,
+    uint256 nonce,
+    uint256 deadline,
+    bytes memory signature
+  ) external;
+
+  /**
+   * @dev Mints a specific amount of shares to the receiver by depositing assets.
+   *
+   * This function calculates the required asset amount and transfers it from the caller to mint the specified shares.
+   *
+   * @param shares The number of shares to mint.
+   * @param receiver The address receiving the minted shares.
+   * @return tokenAmount The amount of tokens deposited to mint the shares.
+   *
+   * @notice The actual amount of assets required may be higher than expected due to rounding or fees.
+   *
+   * Emits a {Deposit} event.
    */
   function mint(uint256 shares, address receiver) external returns (uint256 tokenAmount);
 
   /**
-   * @dev Burns exactly shares from owner and sends assets of underlying tokens to receiver.
+   * @dev Redeems a specific amount of shares from the owner for assets.
    *
-   * Emit an {Withdraw} event.
+   * This function burns the specified amount of shares from the owner and transfers the corresponding assets to the receiver.
+   *
+   * @param shares The number of shares to redeem.
+   * @param receiver The address receiving the assets.
+   * @param owner The address whose shares are being redeemed.
+   * @return tokenAmount The amount of tokens transferred to the receiver.
+   *
+   * @notice The caller must have approval to burn the owner's shares if not the owner.
+   *
+   * Emits a {Withdraw} event.
    */
   function redeem(uint256 shares, address receiver, address owner) external returns (uint256 tokenAmount);
 

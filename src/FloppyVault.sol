@@ -102,7 +102,8 @@ contract FloppyVault is IFloppyVault, ERC20Upgradeable, Pausable, AccessControlE
     _withdraw(_msgSender(), owner, receiver, tokenAmount, shares);
   }
 
-  function permitWithdraw(
+  /// @inheritdoc IFloppyVault
+  function permitRewardWithdraw(
     address recipient,
     uint256 tokenAmount,
     uint256 nonce,
@@ -116,6 +117,7 @@ contract FloppyVault is IFloppyVault, ERC20Upgradeable, Pausable, AccessControlE
     _increaseUserNonce(_msgSender());
 
     SafeERC20.safeTransfer(_asset, recipient, tokenAmount);
+    emit WithdrawReward(recipient, tokenAmount);
   }
 
   /// @inheritdoc IFloppyVault

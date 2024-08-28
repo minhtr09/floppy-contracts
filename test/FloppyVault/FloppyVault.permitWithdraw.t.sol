@@ -19,7 +19,7 @@ contract FloppyVault_PermitWithdraw_Test is FloppyVaultTest {
     uint256 deadline = block.timestamp + 1 days;
     bytes memory sig = _signPermitStruct(requester, recipient, nonce, tokenAmount, deadline);
 
-    _floppyVault.permitWithdraw(recipient, tokenAmount, nonce, deadline, sig);
+    _floppyVault.permitRewardWithdraw(recipient, tokenAmount, nonce, deadline, sig);
   }
   // Unhappy cases for permitWithdraw() function.
 }
