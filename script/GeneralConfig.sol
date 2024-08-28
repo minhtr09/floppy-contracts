@@ -17,4 +17,3 @@ contract GeneralConfig is BaseGeneralConfig {
   }
 }
 
-//13dafbb54ac92cd783c508a17fb09b57a8a44bd4 wbct scrip
