@@ -7,6 +7,9 @@ import { ContextUpgradeable } from "@openzeppelin/contracts-upgradeable/utils/Co
 import { Context } from "@openzeppelin/contracts/utils/Context.sol";
 
 contract FLP is ERC20SpenderWhitelist, Ownable {
+  /// @dev Gap for upgradability.
+  uint256[50] private _____gap;
+
   constructor() Ownable(_msgSender()) {
     _disableInitializers();
   }

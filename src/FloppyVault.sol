@@ -20,9 +20,6 @@ contract FloppyVault is IFloppyVault, ERC20Upgradeable, Pausable, AccessControlE
   /// @dev keccak256("Permit(address requester,address recipient,uint256 nonce,uint256 amount,uint256 deadline)");
   bytes32 public constant PERMIT_TYPEHASH = 0xb365888e64ab7bc61fb16d9b1949494d2eb12e26fcdf26e14b500893673a5a59;
 
-  /// @dev Gap for upgradability.
-  uint256[50] private _____gap;
-
   bytes32 public DOMAIN_SEPARATOR;
 
   /// @dev mapping: user => nonce
@@ -36,6 +33,9 @@ contract FloppyVault is IFloppyVault, ERC20Upgradeable, Pausable, AccessControlE
 
   /// @dev Signer address.
   address _signer;
+
+   /// @dev Gap for upgradability.
+  uint256[50] private _____gap;
 
   modifier notZero(uint256 value) {
     if (value == 0) revert InvalidAmount();
