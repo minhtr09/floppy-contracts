@@ -16,4 +16,3 @@ contract GeneralConfig is BaseGeneralConfig {
     _contractNameMap[contractEnum.key()] = contractEnum.name();
   }
 }
-
