@@ -5,18 +5,19 @@ import { IERC20 } from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 
 interface IFloppyGamble {
   enum BetTier {
+    Unknown,
     Bronze, // 50 -> 100
     Silver, // 101 -> 200
     Gold, // 201 -> 400
-    Diamond, // 401 -> 800
-    Unknown
+    Diamond // 401 -> Infinity
+
   }
 
   enum BetStatus {
+    Unknown,
     Pending,
     Resolved,
-    Canceled,
-    Unknown
+    Canceled
   }
 
   struct BetInfo {
@@ -75,12 +76,8 @@ interface IFloppyGamble {
   error InvalidLength();
   /// @dev Revert when the bet is already canceled.
   error BetAlreadyCanceled(uint256 betId);
-  /// @dev Revert when the bet status is not pending.
-  error BetNotPending(uint256 betId);
-  /// @dev Revert when the bet status is not resolved.
-  error BetNotResolved(uint256 betId);
-  /// @dev Revert when the bet status is not canceled.
-  error BetNotCanceled(uint256 betId);
+  /// @dev Revert when the bet status is not expected.
+  error InvalidBetStatus(BetStatus expected, BetStatus actual);
   /// @dev Revert when the receiver is null.
   error NullAddress();
   /// @dev Revert when the user is not the requester.
@@ -91,6 +88,14 @@ interface IFloppyGamble {
   error RewardAlreadyClaimed(uint256 betId);
   /// @dev Revert when signature expired.
   error SignatureExpired();
+  /// @dev Revert when min bet amount is greater than max bet amount or equal to zero.
+  error InvalidMinBetAmount();
+  /// @dev Revert when max bet amount is less than min bet amount or equal to zero.
+  error InvalidMaxBetAmount();
+  /// @dev Revert when penalty for canceled bet is greater than 100% or equal to zero.
+  error InvalidPenaltyForCanceledBet();
+  /// @dev Revert when bet does not exist.
+  error BetDoesNotExist();
 
   /**
    * @dev Places a bet with the specified amount and tier.
@@ -101,7 +106,7 @@ interface IFloppyGamble {
    * @param amount The amount of the bet.
    * @param tier The tier of the bet.
    */
-  function placeBet(address receiver, uint256 amount, BetTier tier) external;
+  function placeBet(address receiver, uint256 amount, BetTier tier) external returns (uint256);
 
   /**
    * @dev Cancels a bet that has been placed.
@@ -135,7 +140,12 @@ interface IFloppyGamble {
    * @param signature The cryptographic signature provided by the backend to validate the result.
    * @return The amount of the reward distributed, or 0 if the bet is lost.
    */
-  function resolveBetAndClaimReward(uint256 betId, uint256 points, uint256 deadline, bytes memory signature) external returns (uint256);
+  function resolveBetAndClaimReward(
+    uint256 betId,
+    uint256 points,
+    uint256 deadline,
+    bytes memory signature
+  ) external returns (uint256);
 
   /**
    * @dev Claims the reward for a bet that has been resolved.
@@ -201,14 +211,17 @@ interface IFloppyGamble {
    */
   function setPointsRanges(PointsRange[] calldata pointsRanges) external;
 
+  /// @dev Function to get the penalty for canceled bet
+  function getPenaltyForCanceledBet() external view returns (uint256);
+
   /// @dev Function to get the maximum points for a given tier
   function getMaxPointsForTier(BetTier tier) external view returns (uint256);
 
   /// @dev Function to get the minimum points for a given tier
   function getMinPointsForTier(BetTier tier) external view returns (uint256);
 
-  /// @dev Function to get the maximum points range for a given tier
-  function getMaxPointsRangeForTier(BetTier tier) external view returns (uint256, uint256);
+  /// @dev Function to get the points range for a given tier
+  function getPointsRangeForTier(BetTier tier) external view returns (uint256, uint256);
 
   /// @dev Function to get the reward for a given tier and bet amount
   function getReward(BetTier tier, uint256 betAmount) external view returns (uint256);

@@ -54,42 +54,36 @@ contract FloppyGamble is IFloppyGamble, Initializable, Ownable {
     // pointsRanges[1] -> Silver
     // pointsRanges[2] -> Gold
     // pointsRanges[3] -> Diamond
-    PointsRange[4] calldata pointsRanges,
+    PointsRange[] calldata pointsRanges,
     // Reward percentages for each bet tier
     // rewardPercentages[0] -> Bronze
     // rewardPercentages[1] -> Silver
     // rewardPercentages[2] -> Gold
     // rewardPercentages[3] -> Diamond
-    uint256[4] calldata rewardPercentages
+    uint256[] calldata rewardPercentages
   ) external initializer {
     _transferOwnership(_msgSender());
     _updateDomainSeparator();
-    _asset = asset;
-    _wallet = wallet;
-    _signer = signer;
-    _maxBetAmount = maxBetAmount;
-    _minBetAmount = minBetAmount;
-    _penaltyForCanceledBet = penaltyForCanceledBet;
-    _pointsRanges[BetTier.Bronze] = pointsRanges[0];
-    _pointsRanges[BetTier.Silver] = pointsRanges[1];
-    _pointsRanges[BetTier.Gold] = pointsRanges[2];
-    _pointsRanges[BetTier.Diamond] = pointsRanges[3];
-    _rewardPercentages[BetTier.Bronze] = rewardPercentages[0];
-    _rewardPercentages[BetTier.Silver] = rewardPercentages[1];
-    _rewardPercentages[BetTier.Gold] = rewardPercentages[2];
-    _rewardPercentages[BetTier.Diamond] = rewardPercentages[3];
+    _setPointsRanges(pointsRanges);
+    _setRewardPercentages(rewardPercentages);
+    _setAsset(asset);
+    _setWallet(wallet);
+    _setSigner(signer);
+    _setMaxBetAmount(maxBetAmount);
+    _setMinBetAmount(minBetAmount);
+    _setPenaltyForCanceledBet(penaltyForCanceledBet);
   }
 
   /// @inheritdoc IFloppyGamble
-  function placeBet(address receiver, uint256 amount, BetTier tier) external {
+  function placeBet(address receiver, uint256 amount, BetTier tier) external returns (uint256 betId) {
     if (amount > _maxBetAmount || amount < _minBetAmount) revert InvalidBetAmount();
     if (tier == BetTier.Unknown) revert InvalidBetTier();
     if (receiver == address(0)) revert NullAddress();
 
     SafeERC20.safeTransferFrom(_asset, _msgSender(), address(this), amount);
-    uint256 id = _ids++;
+    betId = _ids++;
 
-    _bets[id] = BetInfo({
+    _bets[betId] = BetInfo({
       requester: _msgSender(),
       receiver: receiver,
       amount: amount,
@@ -101,13 +95,14 @@ contract FloppyGamble is IFloppyGamble, Initializable, Ownable {
       claimed: false
     });
 
-    emit BetPlaced(_msgSender(), id);
+    emit BetPlaced(_msgSender(), betId);
   }
 
   /// @inheritdoc IFloppyGamble
   function cancelBet(uint256 betId) external {
     BetInfo storage betInfo = _bets[betId];
-    if (betInfo.status != BetStatus.Pending) revert BetNotPending(betId);
+    _requireBetExists(betId);
+    _requireBetStatus(betInfo.status, BetStatus.Pending);
     if (betInfo.requester != _msgSender()) revert ErrNotRequester();
 
     uint256 betAmount = betInfo.amount;
@@ -122,8 +117,9 @@ contract FloppyGamble is IFloppyGamble, Initializable, Ownable {
   /// @inheritdoc IFloppyGamble
   function resolveBet(uint256 betId, uint256 points, uint256 deadline, bytes memory signature) external {
     BetInfo storage betInfo = _bets[betId];
+    _requireBetExists(betId);
+    _requireBetStatus(betInfo.status, BetStatus.Pending);
     if (deadline < block.timestamp) revert SignatureExpired();
-    if (betInfo.status != BetStatus.Pending) revert BetNotPending(betId);
 
     _validateSignature(betInfo.requester, betInfo.receiver, points, betInfo.amount, deadline, signature);
 
@@ -138,6 +134,19 @@ contract FloppyGamble is IFloppyGamble, Initializable, Ownable {
   }
 
   /// @inheritdoc IFloppyGamble
+  function claimReward(uint256 betId) external returns (uint256 rewardAmount) {
+    BetInfo storage betInfo = _bets[betId];
+    _requireBetExists(betId);
+    _requireBetStatus(betInfo.status, BetStatus.Resolved);
+    if (!betInfo.win) revert BetLost(betId);
+    if (betInfo.claimed) revert RewardAlreadyClaimed(betId);
+
+    betInfo.claimed = true;
+    rewardAmount = betInfo.reward;
+    _claimReward(betInfo.receiver, rewardAmount);
+  }
+
+  /// @inheritdoc IFloppyGamble
   function resolveBetAndClaimReward(
     uint256 betId,
     uint256 points,
@@ -149,71 +158,51 @@ contract FloppyGamble is IFloppyGamble, Initializable, Ownable {
   }
 
   /// @inheritdoc IFloppyGamble
-  function claimReward(uint256 betId) external returns (uint256 rewardAmount) {
-    BetInfo storage betInfo = _bets[betId];
-    if (betInfo.status != BetStatus.Resolved) revert BetNotResolved(betId);
-    if (!betInfo.win) revert BetLost(betId);
-    if (betInfo.claimed) revert RewardAlreadyClaimed(betId);
-
-    betInfo.claimed = true;
-    rewardAmount = betInfo.reward;
-    _claimReward(betInfo.receiver, rewardAmount);
-  }
-
-  /// @inheritdoc IFloppyGamble
   function setMinBetAmount(uint256 minBetAmount) external onlyOwner {
-    _minBetAmount = minBetAmount;
-    emit MinBetAmountUpdated(minBetAmount);
+    if (minBetAmount > _maxBetAmount || minBetAmount == 0) revert InvalidMinBetAmount();
+    _setMinBetAmount(minBetAmount);
   }
 
   /// @inheritdoc IFloppyGamble
   function setMaxBetAmount(uint256 maxBetAmount) external onlyOwner {
-    _maxBetAmount = maxBetAmount;
-    emit MaxBetAmountUpdated(maxBetAmount);
+    if (maxBetAmount < _minBetAmount || maxBetAmount == 0) revert InvalidMaxBetAmount();
+    _setMaxBetAmount(maxBetAmount);
   }
 
   /// @inheritdoc IFloppyGamble
   function setSigner(address signer) external onlyOwner {
-    _signer = signer;
-    emit SignerUpdated(signer);
+    if (signer == address(0)) revert NullAddress();
+    _setSigner(signer);
   }
 
   /// @inheritdoc IFloppyGamble
   function setAsset(IERC20 asset) external onlyOwner {
-    _asset = asset;
-    emit AssetUpdated(address(asset));
+    if (address(asset) == address(0)) revert NullAddress();
+    _setAsset(asset);
   }
 
   /// @inheritdoc IFloppyGamble
   function setWallet(address wallet) external onlyOwner {
-    _wallet = wallet;
-    emit WalletUpdated(wallet);
+    if (wallet == address(0)) revert NullAddress();
+    _setWallet(wallet);
   }
 
   /// @inheritdoc IFloppyGamble
   function setPenaltyForCanceledBet(uint256 penaltyForCanceledBet) external onlyOwner {
-    _penaltyForCanceledBet = penaltyForCanceledBet;
-    emit PenaltyForCanceledBetUpdated(penaltyForCanceledBet);
+    if (penaltyForCanceledBet >= MAX_PERCENTAGE || penaltyForCanceledBet == 0) revert InvalidPenaltyForCanceledBet();
+    _setPenaltyForCanceledBet(penaltyForCanceledBet);
   }
 
   /// @inheritdoc IFloppyGamble
   function setPointsRanges(PointsRange[] calldata pointsRanges) external onlyOwner {
     if (pointsRanges.length != 4) revert InvalidLength();
-    _pointsRanges[BetTier.Bronze] = pointsRanges[0];
-    _pointsRanges[BetTier.Silver] = pointsRanges[1];
-    _pointsRanges[BetTier.Gold] = pointsRanges[2];
-    _pointsRanges[BetTier.Diamond] = pointsRanges[3];
-    emit PointsRangesUpdated(pointsRanges);
+    _setPointsRanges(pointsRanges);
   }
 
   /// @inheritdoc IFloppyGamble
   function setRewardPercentages(uint256[] calldata rewardPercentages) external onlyOwner {
     if (rewardPercentages.length != 4) revert InvalidLength();
-    _rewardPercentages[BetTier.Bronze] = rewardPercentages[0];
-    _rewardPercentages[BetTier.Silver] = rewardPercentages[1];
-    _rewardPercentages[BetTier.Gold] = rewardPercentages[2];
-    _rewardPercentages[BetTier.Diamond] = rewardPercentages[3];
-    emit RewardPercentagesUpdated(rewardPercentages);
+    _setRewardPercentages(rewardPercentages);
   }
 
   /// @inheritdoc IFloppyGamble
@@ -227,9 +216,14 @@ contract FloppyGamble is IFloppyGamble, Initializable, Ownable {
   }
 
   /// @inheritdoc IFloppyGamble
-  function getMaxPointsRangeForTier(BetTier tier) external view returns (uint256, uint256) {
+  function getPointsRangeForTier(BetTier tier) external view returns (uint256, uint256) {
     PointsRange memory range = _pointsRanges[tier];
     return (range.minPoints, range.maxPoints);
+  }
+
+  /// @inheritdoc IFloppyGamble
+  function getPenaltyForCanceledBet() external view returns (uint256) {
+    return _penaltyForCanceledBet;
   }
 
   /// @inheritdoc IFloppyGamble
@@ -267,10 +261,64 @@ contract FloppyGamble is IFloppyGamble, Initializable, Ownable {
     return _wallet;
   }
 
+  function _setMinBetAmount(uint256 minBetAmount) internal {
+    _minBetAmount = minBetAmount;
+    emit MinBetAmountUpdated(minBetAmount);
+  }
+
+  function _setMaxBetAmount(uint256 maxBetAmount) internal {
+    _maxBetAmount = maxBetAmount;
+    emit MaxBetAmountUpdated(maxBetAmount);
+  }
+
+  function _setSigner(address signer) internal {
+    _signer = signer;
+    emit SignerUpdated(signer);
+  }
+
+  function _setAsset(IERC20 asset) internal {
+    _asset = asset;
+    emit AssetUpdated(address(asset));
+  }
+
+  function _setWallet(address wallet) internal {
+    _wallet = wallet;
+    emit WalletUpdated(wallet);
+  }
+
+  function _setPenaltyForCanceledBet(uint256 penaltyForCanceledBet) internal {
+    _penaltyForCanceledBet = penaltyForCanceledBet;
+    emit PenaltyForCanceledBetUpdated(penaltyForCanceledBet);
+  }
+
+  function _setPointsRanges(PointsRange[] calldata pointsRanges) internal {
+    _pointsRanges[BetTier.Bronze] = pointsRanges[0];
+    _pointsRanges[BetTier.Silver] = pointsRanges[1];
+    _pointsRanges[BetTier.Gold] = pointsRanges[2];
+    _pointsRanges[BetTier.Diamond] = pointsRanges[3];
+    emit PointsRangesUpdated(pointsRanges);
+  }
+
+  function _setRewardPercentages(uint256[] calldata rewardPercentages) internal {
+    _rewardPercentages[BetTier.Bronze] = rewardPercentages[0];
+    _rewardPercentages[BetTier.Silver] = rewardPercentages[1];
+    _rewardPercentages[BetTier.Gold] = rewardPercentages[2];
+    _rewardPercentages[BetTier.Diamond] = rewardPercentages[3];
+    emit RewardPercentagesUpdated(rewardPercentages);
+  }
+
   /// @dev Helper function for claiming reward.
   function _claimReward(address receiver, uint256 amount) internal {
     SafeERC20.safeTransfer(_asset, receiver, amount);
     emit RewardClaimed(receiver, amount);
+  }
+
+  function _requireBetStatus(BetStatus status, BetStatus expected) internal view {
+    if (status != expected) revert InvalidBetStatus(status, expected);
+  }
+
+  function _requireBetExists(uint256 betId) internal view {
+    if (betId >= _ids) revert BetDoesNotExist();
   }
 
   function _validateSignature(
