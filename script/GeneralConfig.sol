@@ -10,10 +10,10 @@ contract GeneralConfig is BaseGeneralConfig {
   function _setUpContracts() internal virtual override {
     _mapContractName(Contract.FloppyVault);
     _mapContractName(Contract.FLP);
+    _mapContractName(Contract.FloppyGamble);
   }
 
   function _mapContractName(Contract contractEnum) internal {
     _contractNameMap[contractEnum.key()] = contractEnum.name();
   }
 }
-
