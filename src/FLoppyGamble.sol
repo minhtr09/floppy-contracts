@@ -12,8 +12,10 @@ contract FloppyGamble is IFloppyGamble, Initializable, Ownable {
   uint256 public constant MAX_PERCENTAGE = 100_000;
   /// @dev keccak256("EIP712Domain(string name,string version,uint256 chainId,address verifyingContract)")
   bytes32 public constant DOMAIN_TYPEHASH = 0x8b73c3c69bb8fe3d512ecc4cf759cc79239f7b179b0ffacaa9a75d522b39400f;
-  /// @dev keccak256("Permit(address requester,address receiver,uint256 points,uint256 betAmount,uint256 deadline)");
+  /// @dev keccak256("Permit(uint256 betId,address requester,address receiver,uint256 points,uint256 betAmount,uint256 deadline)");
   bytes32 public constant PERMIT_TYPEHASH = 0x94f4aee5e6d55f6240dc5a2f99ac56687f70186dfc1647b622b06d9de812dd92;
+  /// @dev Time period within which a bet can be canceled
+  uint256 public constant CANCELLATION_PERIOD = 1 hours;
   bytes32 public DOMAIN_SEPARATOR;
   /// @dev Mapping of bet IDs to their corresponding bet information
   mapping(uint256 betId => BetInfo info) internal _bets;
@@ -89,6 +91,7 @@ contract FloppyGamble is IFloppyGamble, Initializable, Ownable {
       amount: amount,
       tier: tier,
       status: BetStatus.Pending,
+      timestamp: block.timestamp,
       points: 0,
       reward: 0,
       win: false,
@@ -104,6 +107,7 @@ contract FloppyGamble is IFloppyGamble, Initializable, Ownable {
     _requireBetExists(betId);
     _requireBetStatus(betInfo.status, BetStatus.Pending);
     if (betInfo.requester != _msgSender()) revert ErrNotRequester();
+    if (block.timestamp < CANCELLATION_PERIOD + betInfo.timestamp) revert TooSoonToCancel();
 
     uint256 betAmount = betInfo.amount;
     uint256 penaltyAmount = betAmount * _penaltyForCanceledBet / MAX_PERCENTAGE;
@@ -117,20 +121,22 @@ contract FloppyGamble is IFloppyGamble, Initializable, Ownable {
   /// @inheritdoc IFloppyGamble
   function resolveBet(uint256 betId, uint256 points, uint256 deadline, bytes memory signature) external {
     BetInfo storage betInfo = _bets[betId];
+    uint256 betAmount = betInfo.amount;
     _requireBetExists(betId);
     _requireBetStatus(betInfo.status, BetStatus.Pending);
     if (deadline < block.timestamp) revert SignatureExpired();
 
-    _validateSignature(betInfo.requester, betInfo.receiver, points, betInfo.amount, deadline, signature);
+    _validateSignature(betId, betInfo.requester, betInfo.receiver, points, betAmount, deadline, signature);
 
     betInfo.status = BetStatus.Resolved;
     betInfo.points = points;
-    betInfo.win = points >= _pointsRanges[betInfo.tier].minPoints;
-    if (betInfo.win) {
-      betInfo.reward = betInfo.amount * _rewardPercentages[betInfo.tier] / MAX_PERCENTAGE;
+    bool isWin = points >= _pointsRanges[betInfo.tier].minPoints;
+    betInfo.win = isWin;
+    if (isWin) {
+      betInfo.reward = betAmount * _rewardPercentages[betInfo.tier] / MAX_PERCENTAGE;
     }
 
-    emit BetResolved(betId);
+    emit BetResolved(betId, isWin);
   }
 
   /// @inheritdoc IFloppyGamble
@@ -313,7 +319,7 @@ contract FloppyGamble is IFloppyGamble, Initializable, Ownable {
     emit RewardClaimed(receiver, amount);
   }
 
-  function _requireBetStatus(BetStatus status, BetStatus expected) internal view {
+  function _requireBetStatus(BetStatus status, BetStatus expected) internal pure {
     if (status != expected) revert InvalidBetStatus(status, expected);
   }
 
@@ -322,16 +328,18 @@ contract FloppyGamble is IFloppyGamble, Initializable, Ownable {
   }
 
   function _validateSignature(
+    uint256 betId,
     address requester,
     address receiver,
     uint256 points,
     uint256 betAmount,
     uint256 deadline,
     bytes memory signature
-  ) internal {
+  ) internal view {
     address signer = ECDSA.recover(
       MessageHashUtils.toTypedDataHash(
-        DOMAIN_SEPARATOR, keccak256(abi.encode(PERMIT_TYPEHASH, requester, receiver, points, betAmount, deadline))
+        DOMAIN_SEPARATOR,
+        keccak256(abi.encode(PERMIT_TYPEHASH, betId, requester, receiver, points, betAmount, deadline))
       ),
       signature
     );

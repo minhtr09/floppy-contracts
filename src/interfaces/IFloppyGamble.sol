@@ -10,7 +10,6 @@ interface IFloppyGamble {
     Silver, // 101 -> 200
     Gold, // 201 -> 400
     Diamond // 401 -> Infinity
-
   }
 
   enum BetStatus {
@@ -24,10 +23,11 @@ interface IFloppyGamble {
     address requester;
     address receiver;
     BetTier tier;
+    BetStatus status;
     uint256 amount;
     uint256 points;
     uint256 reward;
-    BetStatus status;
+    uint256 timestamp;
     bool win;
     bool claimed;
   }
@@ -54,7 +54,7 @@ interface IFloppyGamble {
   /// @dev Emit when a bet is canceled.
   event BetCanceled(address indexed requester, uint256 betId);
   /// @dev Emit when a bet is resolved.
-  event BetResolved(uint256 indexed betId);
+  event BetResolved(uint256 indexed betId, bool win);
   /// @dev Emit when the penalty for canceled bet is updated.
   event PenaltyForCanceledBetUpdated(uint256 penaltyForCanceledBet);
   /// @dev Emit when the reward percentages are updated.
@@ -96,6 +96,8 @@ interface IFloppyGamble {
   error InvalidPenaltyForCanceledBet();
   /// @dev Revert when bet does not exist.
   error BetDoesNotExist();
+  /// @dev Revert when too soon to cancel bet.
+  error TooSoonToCancel();
 
   /**
    * @dev Places a bet with the specified amount and tier.
